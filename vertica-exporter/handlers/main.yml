@@ -1,0 +1,6 @@
+---
+- name: 'restart vertica-exporter'
+  service: 
+    name: vertica_exporter
+    state: restarted
+    enabled: yes

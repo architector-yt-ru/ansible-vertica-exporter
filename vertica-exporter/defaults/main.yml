@@ -1,0 +1,6 @@
+---
+
+vertica_exporter_user: ""
+vertica_exporter_pass: ""
+vertica_exporter_port: 5433
+vertica_exporter_listen: ':9187'

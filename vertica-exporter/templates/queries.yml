@@ -1,0 +1,291 @@
+vertica_node:
+  query: |
+    SELECT node_name as node_name, node_state as node_state,
+      CASE 
+        WHEN (node_state = 'UP') THEN '0'
+        WHEN (node_state = 'DOWN') THEN '1'
+        WHEN (node_state = 'READY') THEN '2'
+        WHEN (node_state = 'UNSAFE') THEN '3'
+        WHEN (node_state = 'SHUTDOWN') THEN '4'
+        WHEN (node_state = 'SHUTDOWN ERROR') THEN '5'
+        WHEN (node_state = 'RECOVERING') THEN '6'
+        WHEN (node_state = 'RECOVERY ERROR') THEN '7'
+        WHEN (node_state = 'RECOVERED') THEN '8'
+        WHEN (node_state = 'INITIALIZING') THEN '9'
+        WHEN (node_state = 'STAND BY') THEN '10'
+        WHEN (node_state = 'NEEDS CATCH UP') THEN '11'
+        ELSE '12' 
+      END as node_state_int, '{{ansible_host}}' as node_host
+    FROM nodes
+  master: true
+  metrics:
+    - node_name: { usage: "LABEL" }
+    - node_state: { usage: "LABEL" }
+    - node_state_int: { usage: "GAUGE" }
+    - node_host: { usage: "LABEL" }
+
+vertica_resource_pool:
+  query: |
+    SELECT node_name, pool_name, memory_inuse_kb, general_memory_borrowed_kb, running_query_count 
+    FROM resource_pool_status 
+    WHERE node_name='{{__vertica_node}}'
+  master: true
+  metrics:
+    - node_name: { usage: "LABEL" } # description: ""
+    - pool_name: { usage: "LABEL" } # description: ""
+    - memory_inuse_kb: { usage: "GAUGE" } # description: ""
+    - general_memory_borrowed_kb: { usage: "GAUGE" } # description: ""
+    - running_query_count: { usage: "COUNTER" } # description: ""
+
+vertica_storage_containers:
+  query: |
+    SELECT node_name, schema_name, projection_name, sum(total_row_count) as total_row_count, sum(deleted_row_count) as deleted_row_count, 
+      sum(delete_vector_count) as delete_vector_count, count(*) as group_count 
+    FROM storage_containers 
+    WHERE node_name='{{__vertica_node}}' AND deleted_row_count > total_row_count*.05::float 
+    GROUP BY 1,2,3;
+  master: true
+  cache_seconds: 240
+  metrics:
+    - node_name: { usage: "LABEL" } # description: ""
+    - schema_name: { usage: "LABEL" } # description: ""
+    - projection_name: { usage: "LABEL" } # description: ""
+    - total_row_count: { usage: "COUNTER" } # description: ""
+    - deleted_row_count: { usage: "COUNTER" } # description: ""
+    - delete_vector_count: { usage: "COUNTER" } # description: ""
+    - group_count: { usage: "COUNTER" } # description: ""
+
+vertica_projection_storage:
+  query: |
+    SELECT node_name, projection_schema, projection_name, SUM(ros_count) AS ros_count 
+    FROM v_monitor.projection_storage 
+    WHERE node_name='{{__vertica_node}}' 
+    GROUP BY node_name, projection_schema, projection_name
+  master: true
+  metrics:
+    - node_name: { usage: "LABEL" } # description: ""
+    - projection_schema: { usage: "LABEL" } # description: ""
+    - projection_name: { usage: "LABEL" } # description: ""
+    - ros_count: { usage: "GAUGE" } # description: ""
+
+vertica_resource_queues:
+  query: |
+    SELECT node_name, pool_name, sum(memory_requested_kb) as memory_requested_kb_total, count(*) as count_total 
+    FROM v_monitor.resource_queues 
+    WHERE node_name='{{__vertica_node}}' 
+    GROUP BY node_name, pool_name;
+  master: true
+  metrics:
+    - node_name: { usage: "LABEL" } # description: ""
+    - pool_name: { usage: "LABEL" } # description: ""
+    - memory_requested_kb_total: { usage: "GAUGE" } # description: ""
+    - count_total: { usage: "GAUGE" } # description: ""
+
+vertica_resource_rejections:
+  query: |
+    SELECT node_name, pool_name, resource_type, reason, rejection_count, last_rejected_timestamp
+    FROM v_monitor.resource_rejections 
+    WHERE node_name='{{__vertica_node}}';
+  master: true
+  metrics:
+    - node_name: { usage: "LABEL" } # description: ""
+    - pool_name: { usage: "LABEL" } # description: ""
+    - resource_type: { usage: "LABEL" } # description: ""
+    - reason: { usage: "LABEL" } # description: ""
+    - rejection_count: { usage: "GAUGE" } # description: ""
+    - last_rejected_timestamp: { usage: "LABEL" } # description: ""
+
+vertica_resource_usage:
+  query: |
+    SELECT node_name, request_count, local_request_count, active_thread_count, open_file_handle_count, memory_requested_kb, 
+      address_space_requested_kb, wos_used_bytes, wos_row_count, ros_used_bytes, ros_row_count, total_row_count, total_used_bytes, tokens_used 
+    FROM resource_usage
+  master: true
+  metrics:
+    - node_name: { usage: "LABEL" }
+    - request_count: { usage: "GAUGE" }
+    - local_request_count: { usage: "GAUGE" }
+    - active_thread_count: { usage: "GAUGE" }
+    - open_file_handle_count: { usage: "GAUGE" }
+    - memory_requested_kb: { usage: "GAUGE" }
+    - address_space_requested_kb: { usage: "GAUGE" }
+    - wos_used_bytes: { usage: "GAUGE" }
+    - wos_row_count: { usage: "GAUGE" }
+    - ros_used_bytes: { usage: "GAUGE" }
+    - ros_row_count: { usage: "GAUGE" }
+    - total_row_count: { usage: "GAUGE" }
+    - total_used_bytes: { usage: "GAUGE" }
+    - tokens_used: { usage: "GAUGE" }
+
+# Use telegraf:
+# procstat_cpu_usage{group="$group", host=~"$host", process_name="vertica"}/ on (group, host) system_n_cpus{group="$group", host=~"$host"}
+
+# vertica_system_cpu:
+#   query: |
+#     SELECT node_name, average_cpu_usage_percent
+#     FROM cpu_usage  
+#     WHERE node_name='{{__vertica_node}}' AND end_time >= NOW() - INTERVAL '1 MINUTE';
+#   master: true
+#   cache_seconds: 59
+#   metrics:
+#     - node_name: { usage: "LABEL" } # description: ""
+#     - average_cpu_usage_percent: { usage: "GAUGE" } # description: ""
+
+# vertica_system_memory:
+#   query: |
+#     SELECT node_name, average_memory_usage_percent 
+#     FROM memory_usage  
+#     WHERE node_name='{{__vertica_node}}' AND end_time >= NOW() - INTERVAL '1 MINUTE';
+#   master: true
+#   cache_seconds: 59
+#   metrics:
+#     - node_name: { usage: "LABEL" } # description: ""
+#     - average_memory_usage_percent: { usage: "GAUGE" } # description: ""
+
+vertica_storage_usage:
+  query: |
+    SELECT * FROM v_monitor.storage_usage WHERE filesystem='vertica' AND node_name='{{__vertica_node}}';
+  master: true
+  metrics:
+    - poll_timestamp: { usage: "DISCARD" } # description: ""
+    - node_name: { usage: "LABEL" } # description: ""
+    - path: { usage: "DISCARD" } # description: ""
+    - device: { usage: "DISCARD" } # description: ""
+    - filesystem: { usage: "DISCARD" } # description: ""
+    - used_bytes: { usage: "GAUGE" } # description: ""
+    - free_bytes: { usage: "GAUGE" } # description: ""
+    - usage_percent: { usage: "GAUGE" } # description: ""
+
+vertica_sessions:
+  query: |
+    SELECT node_name, user_name, count(*) as count 
+    FROM v_monitor.sessions 
+    WHERE node_name='{{__vertica_node}}'
+    GROUP BY node_name, user_name;
+  master: true
+  metrics:
+    - node_name: { usage: "LABEL" } # description: ""
+    - user_name: { usage: "LABEL" } # description: ""
+    - count: { usage: "GAUGE" } # description: ""
+
+vertica_recovery_status:
+  query: |
+    SELECT node_name, recover_epoch, recovery_phase, current_completed, current_total, is_running 
+    FROM v_monitor.recovery_status
+    WHERE node_name='{{__vertica_node}}';
+  master: true
+  metrics:
+    - node_name: { usage: "LABEL" } # description: ""
+    - recover_epoch: { usage: "GAUGE" } # description: ""
+    - recovery_phase: { usage: "LABEL" } # description: ""
+    - current_completed: { usage: "GAUGE" } # description: ""
+    - current_total: { usage: "GAUGE" } # description: ""
+    - is_running: { usage: "LABEL" } # description: ""
+
+# vertica_partitions:
+#   query: |
+#     SELECT node_name, projection_name, count(partition_key) as count
+#     FROM v_monitor.partitions 
+#     WHERE node_name='{{__vertica_node}}'
+#     GROUP BY node_name, projection_name
+#   master: true
+#   metrics:
+#     - node_name: { usage: "LABEL" } # description: ""
+#     - projection_name: { usage: "LABEL" } # description: ""
+#     - count: { usage: "GAUGE" } # description: ""
+
+# vertica_projections:
+#   query: |
+#     SELECT ps.node_name, ps.projection_schema, ps.projection_name, ps.row_count 
+#     FROM v_monitor.projection_storage ps
+#       INNER JOIN v_catalog.projections p ON ps.projection_schema = p.projection_schema AND ps.projection_name = p.projection_name 
+#     WHERE p.is_segmented AND ps.node_name='{{__vertica_node}}'
+#   master: true
+#   metrics:
+#     - node_name: { usage: "LABEL" } # description: ""
+#     - projection_schema: { usage: "LABEL" } # description: ""
+#     - projection_name: { usage: "LABEL" } # description: ""
+#     - row_count: { usage: "GAUGE" } # description: ""
+
+vertica_query:
+  query: |
+    SELECT node_name, active_user_session_count, active_system_session_count, total_user_session_count, 
+      total_system_session_count, total_active_session_count, total_session_count, running_query_count, executed_query_count  
+    FROM query_metrics
+    WHERE node_name='{{__vertica_node}}'
+  master: true
+  metrics:
+    - node_name: { usage: "LABEL" } # description: ""
+    - active_user_session_count: { usage: "GAUGE" } # description: ""
+    - active_system_session_count: { usage: "GAUGE" } # description: ""
+    - total_user_session_count: { usage: "GAUGE" } # description: ""
+    - total_system_session_count: { usage: "GAUGE" } # description: ""
+    - total_active_session_count: { usage: "GAUGE" } # description: ""
+    - total_session_count: { usage: "GAUGE" } # description: ""
+    - running_query_count: { usage: "GAUGE" } # description: ""
+    - executed_query_count: { usage: "GAUGE" } # description: ""
+
+# vertica_error_messages:
+#   query: |
+#     SELECT COUNT(*) AS count FROM error_messages
+#   master: true
+#   metrics:
+#     - count: { usage: "GAUGE" } # description: ""
+
+vertica_error_messages:
+  query: |
+    SELECT COUNT(*) AS count, user_name, error_level, REGEXP_SUBSTR(message,'\w+ \w+ \w+') AS message FROM error_messages GROUP BY 2,3,4;
+  master: true
+  metrics:
+    - count: { usage: "GAUGE" } # description: ""
+    - user_name: { usage: "LABEL" } # description: ""
+    - error_level: { usage: "LABEL" } # description: ""
+    - message: { usage: "LABEL" } # description: ""
+
+vertica_load_balance:
+  query: |
+    SELECT GET_LOAD_BALANCE_POLICY() load_balance_policy, 1 AS policy;
+  master: true
+  cache_seconds: 300
+  metrics:
+    - load_balance_policy: { usage: "LABEL" } # description: ""
+    - policy: { usage: "GAUGE" } # description: ""
+
+## SLOW QUERIES AT THE END!
+
+# select get_preferred_ksafe() designed_fault_tolerance, GET_DESIGN_KSAFE() current_fault_tolerance;
+
+vertica_system:
+  query: |
+    SELECT node_count, node_down_count, current_fault_tolerance, designed_fault_tolerance FROM system;
+  master: true
+  cache_seconds: 330
+  metrics:
+    - node_count: { usage: "GAUGE" } # description: ""
+    - node_down_count: { usage: "GAUGE" } # description: ""
+    - designed_fault_tolerance: { usage: "GAUGE" } # description: ""
+    - current_fault_tolerance: { usage: "GAUGE" } # description: ""
+
+vertica_rebalance:
+  query: |
+    SELECT '{{__vertica_node}}' as node_name, rebalance_method as method, status, COUNT(*) AS count 
+    FROM ( 
+      SELECT rebalance_method, 
+        CASE 
+          WHEN (separated_percent = 100 AND transferred_percent = 100) 
+            THEN 'Completed' 
+          WHEN ( separated_percent <>  0 and separated_percent <> 100) OR (transferred_percent <> 0 AND transferred_percent <> 100) 
+            THEN 'In Progress' 
+          ELSE 'Queued' 
+        END AS status 
+      FROM v_monitor.rebalance_projection_status WHERE is_latest
+    ) AS tab 
+    GROUP BY 1, 2, 3;
+  master: true
+  cache_seconds: 360
+  metrics:
+    - node_name: { usage: "LABEL" } # description: ""
+    - method: { usage: "LABEL" } # description: ""
+    - status: { usage: "LABEL" } # description: ""
+    - count: { usage: "GAUGE" } # description: ""
+

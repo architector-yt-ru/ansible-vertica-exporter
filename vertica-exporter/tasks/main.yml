@@ -1,0 +1,110 @@
+---
+
+## Preflight
+
+- name: 'Getting vertica_node name'
+  shell: >
+    pgrep "^vertica$" -a | sed -re 's/^.*-n (\w+).*$/\1/' || echo ""
+  register: _vertica_node
+  ignore_errors: true
+  changed_when: False
+  check_mode: no
+  tags: [ vertica-exporter, configs ]
+
+- name: 'Setting vertica_node name'
+  set_fact: 
+    __vertica_node: "{{ _vertica_node.stdout | default('none') }}"
+  tags: [ vertica-exporter, configs ]
+
+## Install/Configure
+
+- name: creating directories
+  file: path={{ item }} state=directory force=yes mode=0700
+  with_items:
+    - /opt/vertica_exporter/bin/
+  diff: no
+  check_mode: no
+  tags: [ vertica-exporter, packages ]
+
+- name: propagating vertica-exporter binaries
+  copy:
+    src: "files/vertica_exporter"
+    dest: "/opt/vertica_exporter/bin/vertica_exporter"
+    mode: 0755
+    owner: root
+    group: root
+  notify:
+    - restart vertica-exporter
+  tags: [ vertica-exporter, packages ]
+
+- name: configuring SQL-queries
+  template:
+    src: queries.yml
+    dest: /opt/vertica_exporter/queries.yml
+    force: true
+    owner: root
+    group: root
+    mode: 0640
+    # validate: "/usr/bin/promtool check config %s"
+  notify:
+    - restart vertica-exporter
+  tags: [ vertica-exporter, configs ]
+
+- name: creating '/opt/vertica_exporter/.env' file
+  copy:
+    dest: "/opt/vertica_exporter/.env"
+    owner: root
+    group: root
+    mode: 0600
+    content: |
+      DATA_SOURCE_NAME='host=127.0.0.1 user={{vertica_exporter_user}} password={{vertica_exporter_pass}} sslmode=disable port={{vertica_exporter_port}}'
+
+  notify:
+    - restart vertica-exporter
+  tags: [ vertica-exporter, service, systemd ]
+
+- name: Creating service config
+  copy:
+    dest: "/etc/systemd/system/vertica_exporter.service"
+    owner: root
+    group: root
+    mode: 0644
+    content: |
+      [Unit]
+      Description=Vertica Exporter
+      After=network-online.target
+
+      [Service]
+      User=root
+      Type=simple
+      StartLimitBurst=5
+      StartLimitInterval=0
+      Restart=on-failure
+      RestartSec=1
+      PIDFile=/var/run/vertica_exporter.pid
+      EnvironmentFile=/opt/vertica_exporter/.env
+      ExecStart=/opt/vertica_exporter/bin/vertica_exporter \
+        --disable-default-metrics \
+        --disable-settings-metrics \
+        --extend.query-path=/opt/vertica_exporter/queries.yml \
+        --web.listen-address="{{vertica_exporter_listen}}"
+      ExecStop=/bin/kill -s SIGTERM $MAINPID
+
+      [Install]
+      WantedBy=multi-user.target
+  notify:
+    - restart vertica-exporter
+  tags: [ vertica-exporter, service, systemd ]
+
+- name: Reloading systemd
+  systemd:
+    daemon_reload: true
+    name: "vertica_exporter"
+  tags: [ vertica-exporter, service, systemd ]
+
+- name: Starting services
+  service:
+    name: "vertica_exporter"
+    state: "started"
+    enabled: yes
+  tags: [ vertica-exporter, service, systemd ]
