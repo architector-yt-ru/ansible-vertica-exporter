@@ -9,7 +9,7 @@
   vars:
 
     vertica_exporter_user: dbadmin
-    vertica_exporter_pass: dbapassword
+    vertica_exporter_pass: dbpassword
     vertica_exporter_port: 5433
     vertica_exporter_listen: "0.0.0.0:9187"
 

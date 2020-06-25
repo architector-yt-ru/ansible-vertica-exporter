@@ -5,7 +5,7 @@ You can use dashboard [`grafana-vertica`](https://github.com/architector-yt-ru/g
 
 ## Description
 
-Vertica-exporter is a fork of `postgres_exporter`](https://github.com/wrouesnel/postgres_exporter) with tiny patch:
+Vertica-exporter is a fork of [`postgres_exporter`](https://github.com/wrouesnel/postgres_exporter) with tiny patch:
 
 ```diff
 diff --git a/cmd/postgres_exporter/postgres_exporter.go b/cmd/postgres_exporter/postgres_exporter.go
@@ -24,7 +24,7 @@ index 1a9eaaa..98bd97a 100644
 
 ```
 
-You can build your own binary and replace `./vertica-exporter/files/vertica_exporter`](https://github.com/architector-yt-ru/ansible-vertica-exporter/blob/master/vertica-exporter/files/vertica_exporter)
+You can build your own binary and replace [`./vertica-exporter/files/vertica_exporter`](https://github.com/architector-yt-ru/ansible-vertica-exporter/blob/master/vertica-exporter/files/vertica_exporter)
 
 ## Role variables
 
